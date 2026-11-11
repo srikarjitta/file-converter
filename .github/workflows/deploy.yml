@@ -1,0 +1,52 @@
+name: Deploy Converter to AWS Lambda
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies & package
+        run: |
+          mkdir -p package
+          # Install dependencies matching Lambda Linux architecture
+          pip install \
+            --platform manylinux2014_x86_64 \
+            --target=package \
+            --implementation cp \
+            --python-version 3.11 \
+            --only-binary=:all: \
+            -r requirements.txt
+          
+          # Copy source code into package directory
+          cp converter.py package/
+          
+          # Create zip deployment bundle
+          cd package
+          zip -r ../deployment_package.zip .
+          cd ..
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy package to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name FileConverterFunction \
+            --zip-file fileb://deployment_package.zip
